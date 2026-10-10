@@ -68,7 +68,7 @@ fun ApplicationInfoContent(
 
         Box(modifier = Modifier.weight(1f)) {
             LazyColumn {
-                items(PatchStore.all()) {
+                items(PatchStore.all().filter { !it.requiresArguments }) {
                     ListItem(
                         headlineContent = {
                             Text(localizedPatch(it))

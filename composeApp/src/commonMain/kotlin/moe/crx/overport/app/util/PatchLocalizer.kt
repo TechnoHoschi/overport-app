@@ -29,6 +29,8 @@ object PatchLocalizer {
         PATCH_FORCE_PASSTHROUGH to Res.string.patch_force_passthrough,
         PATCH_DISABLE_SPACE_WARP to Res.string.patch_disable_space_warp,
         PATCH_DISABLE_CONTROLLER_OFFSET to Res.string.patch_disable_controller_offset,
+        PATCH_RUNTIME_CONFIG to Res.string.patch_runtime_config,
+        PATCH_PLATFORM_PRODUCTS to Res.string.patch_platform_products,
     )
 
     @Composable

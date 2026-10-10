@@ -3,6 +3,7 @@ package moe.crx.overport.commands
 import kotlinx.coroutines.cancelAndJoin
 import moe.crx.overport.cli.CliCommand
 import moe.crx.overport.patches.PLATFORM_ICON_RESIZER
+import moe.crx.overport.patching.InvalidPatchArgumentException
 import moe.crx.overport.patching.PatchStore
 import moe.crx.overport.patching.PatcherContext
 import moe.crx.overport.utils.DesktopUtil.defaultWorkspace
@@ -22,7 +23,8 @@ object PatchApplicationCommand : CliCommand() {
 
     override fun printHelp(): Boolean {
         println("usage: overport patch --input=<path> [--output=<path>]")
-        println("    [--output-name=<format>] [--workspace=<path>] [--patches=<names>] [--version=<value>]")
+        println("    [--output-name=<format>] [--workspace=<path>] [--patches=<names>] [--extra-patches=<names>]")
+        println("    [--version=<value>]")
         println()
         println("--input=<path>")
         println("Specifies input APK file to patch.")
@@ -45,6 +47,10 @@ object PatchApplicationCommand : CliCommand() {
         println("Specifies patches to apply. Value should be a semicolon-separated list of patch names.")
         println("If not specified, uses every recommended patch available. Use \"overport patches\" to see available patches.")
         println("You can also specify arguments for a specific patch using <patch name>=<comma-separated arguments>.")
+        println()
+        println("--extra-patches=<value>")
+        println("Same syntax as --patches. Adds patches (or arguments) on top of --patches or the recommended set.")
+        println("Example: --extra-patches=\"patch_platform_products=premium_sku;patch_runtime_config=verbose_logging=1\"")
         println()
         println("--version=<value>")
         println("Specifies which overport version to use for patching.")
@@ -71,6 +77,7 @@ object PatchApplicationCommand : CliCommand() {
         var outputFile: String? = null,
         var workspace: String? = null,
         var patches: Map<String, List<String>>? = null,
+        var extraPatches: Map<String, List<String>> = mapOf(),
         var nameFormat: String? = null,
         var overportVersion: String? = null,
     )
@@ -87,9 +94,8 @@ object PatchApplicationCommand : CliCommand() {
                 "--input" -> parsed.inputFile = value
                 "--output" -> parsed.outputFile = value
                 "--workspace" -> parsed.workspace = value
-                "--patches" -> parsed.patches = value.split(';').map { splitted -> splitted.trim() }.associate {
-                    it.substringBefore('=') to it.substringAfter('=', "").split(',').map { splitted -> splitted.trim() }
-                }
+                "--patches" -> parsed.patches = parsePatchList(value)
+                "--extra-patches" -> parsed.extraPatches = parsePatchList(value)
 
                 "--output-name" -> parsed.nameFormat = value
                 "--version" -> parsed.overportVersion = value
@@ -97,6 +103,13 @@ object PatchApplicationCommand : CliCommand() {
         }
 
         return parsed
+    }
+
+    private fun parsePatchList(value: String): Map<String, List<String>> {
+        return value.split(';').map { it.trim() }.filter { it.isNotEmpty() }.associate {
+            it.substringBefore('=') to it.substringAfter('=', "").split(',').map { splitted -> splitted.trim() }
+                .filter { splitted -> splitted.isNotEmpty() }
+        }
     }
 
     override suspend fun execute(args: List<String>): Boolean {
@@ -116,7 +129,13 @@ object PatchApplicationCommand : CliCommand() {
 
         val workspace = parsed.workspace?.let { File(it) } ?: defaultWorkspace()
 
-        val patches = parsed.patches ?: PatchStore.recommended().associate { it.name to listOf() }
+        val patches = (parsed.patches ?: PatchStore.recommended().associate { it.name to listOf() }) + parsed.extraPatches
+
+        val unknownPatches = patches.keys.filter { PatchStore.get(it) == null }
+        if (unknownPatches.isNotEmpty()) {
+            println("Unknown patch(es): ${unknownPatches.joinToString()}. Use \"overport patches\" to list available patches.")
+            return true
+        }
 
         val nameFormat = parsed.nameFormat ?: DEFAULT_FORMAT
 
@@ -159,9 +178,17 @@ object PatchApplicationCommand : CliCommand() {
             print("Applying patch $currentPatch... ")
             print("($appliedPatches / $totalPatches)")
         }
-        patcher.patch(patches) { index, patch ->
-            appliedPatches = index
-            currentPatch = patch.name
+        try {
+            patcher.patch(patches) { index, patch ->
+                appliedPatches = index
+                currentPatch = patch.name
+            }
+        } catch (e: InvalidPatchArgumentException) {
+            waitingForPatching.cancelAndJoin()
+            println()
+            println("Invalid patch argument: ${e.message}")
+            patcher.cleanup()
+            return true
         }
         waitingForPatching.cancelAndJoin()
 

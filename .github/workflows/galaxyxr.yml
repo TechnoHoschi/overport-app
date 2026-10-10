@@ -1,0 +1,116 @@
+name: Galaxy XR build
+
+on:
+  push:
+    branches: [ galaxyxr ]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Create a GitHub pre-release with this tag (e.g. gxr-1.2.3.1). Leave empty to only build."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build CLI
+        run: |
+          chmod +x gradlew
+          ./gradlew :overportcli:shadowJar
+
+      - name: Smoke test CLI
+        run: |
+          JAR=$(ls overportcli/build/libs/*-all.jar)
+          java -jar "$JAR" patches | tee patches.txt
+          grep -q patch_platform_products patches.txt
+          grep -q patch_runtime_config patches.txt
+          java -jar "$JAR" analyze | grep -q "usage: overport analyze"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-jar
+          path: overportcli/build/libs/*-all.jar
+          retention-days: 30
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      # Debug build: signed with the debug key, so it installs directly on a headset.
+      - name: Build Android APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :composeApp:assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: composeApp/build/outputs/apk/debug/*.apk
+          retention-days: 30
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build desktop app
+        run: ./gradlew :composeApp:packageReleaseDistributionForCurrentOS
+        shell: bash
+
+      - name: Zip desktop app
+        run: Compress-Archive -Path composeApp/build/compose/binaries/main-release/app/* -DestinationPath overport-windows.zip
+        shell: pwsh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-app
+          path: overport-windows.zip
+          retention-days: 30
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    needs: [ cli, android, windows ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          ls -la dist
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "overport Galaxy XR $TAG" \
+            --notes "Galaxy XR fork build from ${GITHUB_SHA::7}. See GALAXYXR.md for changes. Runtime libraries are still downloaded from the overport release index."

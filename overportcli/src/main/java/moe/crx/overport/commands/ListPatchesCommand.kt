@@ -16,7 +16,8 @@ object ListPatchesCommand : CliCommand() {
 
         PatchStore.all().forEach {
             print("- ")
-            println(it.name)
+            print(it.name)
+            println(if (it.isRecommended) " (recommended)" else "")
         }
 
         return true

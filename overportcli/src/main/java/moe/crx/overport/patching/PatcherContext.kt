@@ -113,7 +113,8 @@ class PatcherContext(
 
         val executor = PatchExecutor(librariesDir, workingDir, apk())
 
-        val patches = args.keys.mapNotNull { PatchStore.get(it) }
+        // Run in registration order, so results don't depend on the order patches were passed in.
+        val patches = PatchStore.all().filter { it.name in args.keys }
 
         patches.forEachIndexed { index, patch ->
             callback(index, patch)

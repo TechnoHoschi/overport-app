@@ -47,5 +47,7 @@ object PatchStore {
         register(PATCH_FORCE_PASSTHROUGH)
         register(PATCH_DISABLE_SPACE_WARP)
         register(PATCH_DISABLE_CONTROLLER_OFFSET)
+        register(PATCH_RUNTIME_CONFIG)
+        register(PATCH_PLATFORM_PRODUCTS)
     }
 }
