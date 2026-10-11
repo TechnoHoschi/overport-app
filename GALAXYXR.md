@@ -20,6 +20,10 @@ Branch `galaxyxr` carries the changes, `master` mirrors upstream.
 | `patch_remove_uses_library` | Default is now `mode=optional`: libraries are kept but marked `required=false` (upstream removed all of them, breaking e.g. `org.apache.http.legacy`). `mode=remove` restores upstream behaviour |
 | Config generation | Frida-config products/assets are merged instead of overwriting the database |
 | GUI | Patches that need arguments are hidden (no argument input yet) |
+| `export` | Pull an installed app from a headset (e.g. your Quest): base + split APKs (merged into one APK), OBB files. `--list` shows installed apps |
+| `deploy` | Install a patched APK: optional `--uninstall`, runtime permissions (`-g`), OBB upload, all-files access for players, `--verbose-logging` |
+| `test` | Launch app, record logcat for `--duration` seconds, write log + report (crashes, EGL/OpenXR errors, platform SDK lines) |
+| Multi-device | `export`/`deploy`/`test` take `--device=<serial>`; adb binary can be overridden with `OVERPORT_ADB` |
 
 ## Usage
 
@@ -36,7 +40,19 @@ java -jar overportcli-*-all.jar patch --input=player.apk \
   --extra-patches="patch_vr_metadata=boundary=NO_RECOMMENDATION,start_mode_scope=both,openxr_loader=native"
 ```
 
-Install on the Galaxy XR:
+Full round trip with Quest and Galaxy XR connected at the same time (`adb devices` shows both serials):
+
+```powershell
+$cli = "overportcli-1.2.3-all.jar"
+java -jar $cli export --device=<quest-serial> --list
+java -jar $cli export --device=<quest-serial> --package=com.example.player --output=work
+java -jar $cli analyze --input=work/com.example.player/com.example.player.apk
+java -jar $cli patch --input=work/com.example.player/com.example.player.apk --output=work/out
+java -jar $cli deploy --device=<xr-serial> --apk=work/out/<output>.apk --obb=work/com.example.player --verbose-logging
+java -jar $cli test --device=<xr-serial> --package=com.example.player --duration=90 --output=work/logs
+```
+
+Manual install on the Galaxy XR:
 
 ```bash
 adb install -r player-output.apk          # first time: uninstall the original first (signature differs; OBB/saves are lost!)
